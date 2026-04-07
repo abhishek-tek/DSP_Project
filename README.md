@@ -12,7 +12,7 @@ Audio Analyzer is a single-file Python desktop application (`echofind_gui.py`) t
 The project serves a dual purpose:
 
 1. **Educational tool** — an interactive, code-free environment for exploring MIR (Music Information Retrieval) concepts grounded in McFee et al. (2015).
-2. **Phase 1 Input Pipeline** — the complete preprocessing and augmentation stack for *EchoFind*, a self-supervised audio representation system submitted to **IEEE Impulse 2026** (Signal Processing & Deep Learning Track).
+2. **Phase 1 Input Pipeline** — the complete preprocessing and augmentation stack for *Audio Analyzer*
 
 The core premise: before any deep learning model can learn audio representations, the raw waveform must be converted into a perceptually meaningful, augmentation-ready format. This application implements and visualises every step of that transformation.
 
@@ -192,7 +192,7 @@ for view_i, view_j, track_idx in loader:
 
 ## Organiser Evaluation Checks (Phase 1)
 
-Per the IEEE Impulse 2026 specification, all three checks pass:
+all three checks pass:
 
 ```python
 import numpy as np
@@ -241,28 +241,10 @@ score(q, v) = (q · v) / (‖q‖ · ‖v‖)
 
 ```
 audio-analyzer/
-├── echofind_gui.py                  # Complete application — run this
+├── Audio_Analyzer.py                  # Complete application — run this
 ├── requirements.txt                 # pip dependencies
 ├── README.md
-├── notebooks/
-│   └── phase1_echofind.ipynb       # Jupyter walkthrough + eval checks
-└── LICENSE                          # MIT
+
 ```
 
 ---
-
-## References
-
-1. **McFee et al. (2015)**. *librosa: Audio and Music Signal Analysis in Python*. SciPy 2015. DOI: 10.25080/Majora-7b98e3ed-003
-2. **Chen et al. (2020)**. *A Simple Framework for Contrastive Learning of Visual Representations*. ICML 2020.
-3. **Park et al. (2019)**. *SpecAugment: A Simple Data Augmentation Method for ASR*. Interspeech 2019.
-4. **Ellis (2007)**. *Beat Tracking by Dynamic Programming*. Journal of New Music Research, 36(1).
-5. **Fitzgerald (2010)**. *Harmonic/Percussive Separation Using Median Filtering*. DAFx-10.
-6. **Defferrard et al. (2017)**. *FMA: A Dataset for Music Analysis*. ISMIR 2017.
-7. **IEEE Impulse 2026**. *EchoFind Problem Statement — Signal Processing & Deep Learning Track*.
-
----
-
-## License
-
-MIT License — see `LICENSE` for full terms.
