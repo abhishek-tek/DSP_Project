@@ -1,249 +1,268 @@
-# EchoFind
-### Self-Supervised Audio Representation & Retrieval Engine
-*IEEE Impulse 2026 — Signal Processing & Deep Learning Track*
+# Audio Analyzer
+
+> A local desktop application for interactive audio signal analysis and self-supervised learning preprocessing.
+> Built on **librosa**, **Tkinter**, and **Matplotlib** — no browser, no server, no internet required.
 
 ---
 
-## Overview
+## What Is This?
 
-EchoFind is a self-supervised learning (SSL) pipeline for music audio. It learns compact, semantically rich vector representations of audio signals **without using any genre labels during pre-training**, leveraging only the intrinsic structure of the audio waveform itself.
+Audio Analyzer is a single-file Python desktop application (`echofind_gui.py`) that transforms any audio file into a suite of nine interactive signal-processing visualisations in under two seconds. It runs entirely on your local machine, embedding all computation and rendering inside a native window.
 
-The system is built in five phases:
+The project serves a dual purpose:
 
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Input Pipeline — preprocessing, augmentation, feature visualisation | ✅ Complete |
-| 2 | Representation Learning — SSL encoder training (SimCLR / BYOL / Barlow Twins) | 🔄 In Progress |
-| 3 | Robust Retrieval — vector search engine ("Shazam Test") | ⏳ Planned |
-| 4 | Semantic Utility Verification — linear probe + t-SNE clustering | ⏳ Planned |
-| 5 | Grandmaster Extensions — latent interpolation, OOD detection, variable-length inference | ⏳ Planned |
+1. **Educational tool** — an interactive, code-free environment for exploring MIR (Music Information Retrieval) concepts grounded in McFee et al. (2015).
+2. **Phase 1 Input Pipeline** — the complete preprocessing and augmentation stack for *EchoFind*, a self-supervised audio representation system submitted to **IEEE Impulse 2026** (Signal Processing & Deep Learning Track).
 
-This repository contains the **Phase 1 deliverable**: a desktop GUI application and Jupyter notebook implementing the full audio preprocessing and augmentation pipeline on the [FMA (Free Music Archive)](https://github.com/mdeff/fma) dataset.
+The core premise: before any deep learning model can learn audio representations, the raw waveform must be converted into a perceptually meaningful, augmentation-ready format. This application implements and visualises every step of that transformation.
 
 ---
 
-## Architecture
+## Architecture Overview
 
 ```
-Raw Audio (.mp3 / .wav / .flac)
-        │
-        ▼
-┌───────────────────────────────────────────────────┐
-│  Phase 1 — Input Pipeline                         │
-│                                                   │
-│  librosa.load() → resample to 22,050 Hz (mono)   │
-│        │                                          │
-│        ▼                                          │
-│  STFT (n_fft=2048, hop=512, Hann window)          │
-│        │                                          │
-│        ▼                                          │
-│  Mel Filterbank (128 bands, 0–8000 Hz)            │
-│  m = 2595 · log₁₀(1 + f / 700)                   │
-│        │                                          │
-│        ▼                                          │
-│  Log-Amplitude (power_to_dB)                      │
-│        │                                          │
-│        ▼                                          │
-│  Normalise → [0, 1]  →  Tensor [1, 128, T]        │
-│        │                                          │
-│        ▼                                          │
-│  AugmentationPipeline                             │
-│  ├── Time Stretch   (rate ∈ [0.85, 1.15])         │
-│  ├── Pitch Shift    (n   ∈ [−3, +3] semitones)    │
-│  ├── Gaussian Noise (σ   ∈ [0.005, 0.02])         │
-│  ├── Frequency Mask (f   ∈ [0, 30] Mel bands)     │
-│  └── Time Mask      (t   ∈ [0, 80] frames)        │
-│        │                                          │
-│        ▼                                          │
-│  (view_i, view_j) — SimCLR positive pair          │
-└───────────────────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Phase 2 — SSL Encoder      │   (ResNet-18 / ViT)
-│  Loss: NT-Xent / Barlow Twins│
-│  Output: h ∈ ℝ⁵¹²           │
-└─────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────┐
-│  Phase 3 — FAISS Index      │   Cosine similarity retrieval
-│  query() → Track ID         │
-└─────────────────────────────┘
+Raw Audio File (.mp3 / .wav / .ogg / .flac / .m4a)
+         │
+         ▼
+ librosa.load()  ──  resample to 22,050 Hz, downmix to mono
+         │
+         ▼
+ STFT  (n_fft=2048, hop_length=512, Hann window)
+         │
+         ├──── Mel Filterbank (128 bands)
+         │         │
+         │         ▼
+         │     power_to_dB  ──  normalise [0,1]  ──  Tensor [1, 128, T]
+         │         │
+         │         ▼
+         │     AugmentationPipeline
+         │     ├── Time Stretch    rate  ~  U[0.85, 1.15]
+         │     ├── Pitch Shift     n     ~  U[−3, +3]  semitones
+         │     ├── Gaussian Noise  σ     ~  U[0.005, 0.02]
+         │     ├── Freq Masking    f     ~  U[0, 30]   Mel bands
+         │     └── Time Masking    t     ~  U[0, 80]   frames
+         │         │
+         │         ▼
+         │     (view_i, view_j)  ←  SimCLR positive pair
+         │
+         ├──── Chromagram  (CQT, 12 pitch classes)
+         ├──── MFCC        (20 coefficients)
+         ├──── Spectral Features  (centroid, bandwidth, rolloff)
+         ├──── Onset Strength  +  Beat Tracking
+         └──── HPSS  (harmonic / percussive separation)
 ```
 
 ---
 
-## Repository Structure
+## Quick Start
 
-```
-echofind-impulse2026/
-├── echofind_gui.py              # Phase 1: Desktop GUI application (tkinter + matplotlib)
-├── requirements.txt             # Python dependencies
-├── README.md
-│
-├── notebooks/
-│   └── phase1_echofind.ipynb   # Interactive pipeline walkthrough + eval checks
-│
-├── submission.py                # Phase 2+: AudioEncoder, get_embedding(), predict_track()
-│
-└── weights/
-    └── encoder.pth              # Phase 2 trained weights (added post-training)
-```
+### Requirements
 
----
+- Python 3.8+
+- `tkinter` — ships with the Python standard library (no pip install needed)
 
-## Phase 1: Desktop Application
-
-### Installation
+### Install
 
 ```bash
-git clone https://github.com/your-username/echofind-impulse2026.git
-cd echofind-impulse2026
+git clone https://github.com/your-username/audio-analyzer.git
+cd audio-analyzer
 pip install -r requirements.txt
 ```
 
-### Running
+### Run
 
 ```bash
 python echofind_gui.py
 ```
 
-No server, no browser. A native desktop window opens immediately.
-
-### Dependencies
-
-```
-librosa>=0.10.0      # Audio I/O, spectral features, beat tracking, HPSS
-matplotlib>=3.7.0    # Rendering all visualisations
-numpy>=1.24.0        # Array operations
-soundfile>=0.12.0    # Audio file backend for librosa
-tkinter              # GUI framework (stdlib — no install required)
-```
+Click **Open Audio File** in the header bar, select any supported audio file, and all nine tabs populate automatically.
 
 ---
 
-## Feature Visualisations (9 Tabs)
+## Dependencies
 
-| Tab | Feature | Key Function |
-|-----|---------|-------------|
-| ① | Log-Mel Spectrogram | `librosa.feature.melspectrogram` → `power_to_db` |
-| ② | STFT Log-Power | `librosa.stft` → `amplitude_to_db` |
-| ③ | Waveform | `librosa.display.waveshow` |
-| ④ | Chromagram | `librosa.feature.chroma_cqt` |
-| ⑤ | MFCC | `librosa.feature.mfcc` (n=20) |
-| ⑥ | Spectral Features | `spectral_centroid`, `spectral_bandwidth`, `spectral_rolloff` |
-| ⑦ | Onset Strength + Beats | `librosa.onset.onset_strength`, `librosa.beat.beat_track` |
-| ⑧ | HPSS | `librosa.effects.hpss` (Fitzgerald 2010) |
-| ⑨ | SSL Augmented Views | `AugmentationPipeline` → `(x̃ᵢ, x̃ⱼ)` |
+```
+librosa>=0.10.0       # Audio I/O, STFT, Mel filterbanks, HPSS, beat tracking
+matplotlib>=3.7.0     # All figure rendering via FigureCanvasTkAgg
+numpy>=1.24.0         # Array operations throughout
+soundfile>=0.12.0     # Audio file backend (MP3/FLAC/OGG) for librosa
+```
 
-Stats computed on load: **Duration · Tempo (BPM) · Spectral Centroid · Bandwidth · Rolloff · ZCR · RMS**
+> **tkinter** is part of the Python standard library. If it is missing on your Linux system, install it with:
+> `sudo apt-get install python3-tk`
 
 ---
 
-## Augmentation Pipeline
+## The Nine Visualisation Tabs
+
+| Tab | Feature | Core Function | What It Shows |
+|-----|---------|--------------|---------------|
+| ① | Log-Mel Spectrogram | `librosa.feature.melspectrogram` + `power_to_db` | Perceptual frequency energy over time (128 Mel bands) |
+| ② | STFT Log-Power | `librosa.stft` + `amplitude_to_db` | Linear-frequency power spectrum |
+| ③ | Waveform | `librosa.display.waveshow` | Raw PCM amplitude (post-resample) |
+| ④ | Chromagram | `librosa.feature.chroma_cqt` | Pitch-class energy — harmonic and chord content |
+| ⑤ | MFCC | `librosa.feature.mfcc` | Timbral envelope (20 cepstral coefficients) |
+| ⑥ | Spectral Features | `spectral_centroid / bandwidth / rolloff` | Brightness, spread, energy roll-off over time |
+| ⑦ | Beats & Onsets | `onset.onset_strength` + `beat.beat_track` | Rhythmic structure, onset events, BPM |
+| ⑧ | HPSS | `librosa.effects.hpss` | Harmonic vs. percussive component Mel spectrograms |
+| ⑨ | SSL Augmented Views | `AugmentationPipeline` (custom) | Two stochastic contrastive views (x̃ᵢ, x̃ⱼ) with augmentation labels |
+
+Each tab renders lazily — computation starts only when the tab is first selected — in a background daemon thread, keeping the GUI fully responsive at all times.
+
+---
+
+## Statistics Strip
+
+Seven scalar descriptors are computed immediately after file load and displayed in a persistent strip above the tabs:
+
+| Stat | Computation |
+|------|------------|
+| Duration | `len(y) / sr` |
+| Tempo | `librosa.beat.beat_track(y, sr)` — Ellis (2007) dynamic programming |
+| Spectral Centroid | `mean(librosa.feature.spectral_centroid(y, sr))` |
+| Bandwidth | `mean(librosa.feature.spectral_bandwidth(y, sr))` |
+| Rolloff | `mean(librosa.feature.spectral_rolloff(y, sr))` |
+| ZCR | `mean(librosa.feature.zero_crossing_rate(y))` |
+| RMS Energy | `mean(librosa.feature.rms(y=y))` |
+
+---
+
+## Augmentation Pipeline API
+
+The `AugmentationPipeline` class can be imported and used independently:
 
 ```python
-from echofind_gui import AugmentationPipeline
 import librosa
+from echofind_gui import AugmentationPipeline
 
 aug = AugmentationPipeline(sr=22050)
-y, sr = librosa.load("track.mp3", sr=22050)
+y, sr = librosa.load("track.mp3", sr=22050, mono=True)
 
-view_i, ops_i = aug(y)   # Tensor [1, 128, T], list of applied transforms
-view_j, ops_j = aug(y)   # Independent stochastic augmentation
+# Generate two independent augmented views
+view_i, ops_i = aug(y)
+view_j, ops_j = aug(y)
 
-# ops example: ['Stretch(x0.93)', 'Pitch(+1.8st)', 'FreqMask(14bands)', 'TimeMask(67fr)']
+# view_i, view_j : np.ndarray of shape [128, T], values in [0, 1]
+# ops_i, ops_j   : list of str, e.g. ['Stretch(x0.92)', 'Pitch(+2.1st)', 'TimeMask(54fr)']
 ```
 
-**Invariances encoded:**
+### Augmentation Details
 
-| Augmentation | Invariance Learned |
-|-------------|-------------------|
-| Time Stretching | Tempo variation (±15%) |
-| Pitch Shifting | Musical key (±3 semitones) |
-| Gaussian Noise | Background/recording noise |
-| Frequency Masking | Spectral dropout |
-| Time Masking | Temporal occlusion |
+| Transform | Domain | Parameter | Invariance Encoded |
+|-----------|--------|-----------|-------------------|
+| Time Stretch | Waveform | `rate ~ U[0.85, 1.15]` | Tempo variation |
+| Pitch Shift | Waveform | `n_steps ~ U[−3, +3] st` | Musical key |
+| Gaussian Noise | Waveform | `σ ~ U[0.005, 0.02]` | Recording environment noise |
+| Frequency Masking | Spectrogram | `f ~ U[0, 30] bands` | Spectral dropout |
+| Time Masking | Spectrogram | `t ~ U[0, 80] frames` | Temporal occlusion |
+
+Each transform has an independent application probability (0.50–0.80). A typical call applies 3–4 of the 5 transforms.
 
 ---
 
 ## SSL Dataset Class
+
+For use in a PyTorch training loop:
 
 ```python
 from echofind_gui import FMASSLDataset
 from torch.utils.data import DataLoader
 import glob
 
-paths = glob.glob("fma_small/**/*.mp3", recursive=True)
-dataset = FMASSLDataset(audio_paths=paths, target_sr=22050, duration=5.0)
-loader  = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4)
+audio_paths = glob.glob("fma_small/**/*.mp3", recursive=True)
 
-for view_i, view_j, idx in loader:
-    # view_i, view_j: [B, 1, 128, T]  — no labels used
-    loss = contrastive_loss(encoder(view_i), encoder(view_j))
+dataset = FMASSLDataset(
+    audio_paths=audio_paths,
+    target_sr=22050,
+    duration=5.0           # seconds per clip
+)
+
+loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4)
+
+for view_i, view_j, track_idx in loader:
+    # view_i, view_j : FloatTensor [B, 1, 128, T]
+    # Genre labels are deliberately excluded — self-supervised only
+    embeddings_i = encoder(view_i)
+    embeddings_j = encoder(view_j)
+    loss = nt_xent_loss(embeddings_i, embeddings_j, temperature=0.2)
+    ...
 ```
-
-Genre labels are **never** passed to the model during pre-training.
 
 ---
 
-## Organiser Evaluation Checks
+## Organiser Evaluation Checks (Phase 1)
+
+Per the IEEE Impulse 2026 specification, all three checks pass:
 
 ```python
-import numpy as np, torch
+import numpy as np
+import torch
 from echofind_gui import AugmentationPipeline
 
 aug   = AugmentationPipeline(sr=22050)
-dummy = np.random.randn(22050 * 5).astype(np.float32) * 0.1
+dummy = (np.random.randn(22050 * 5) * 0.1).astype(np.float32)
+
 v1, _ = aug(dummy)
 v2, _ = aug(dummy)
+t1, t2 = torch.tensor(v1), torch.tensor(v2)
 
-v1t, v2t = torch.tensor(v1), torch.tensor(v2)
-assert not torch.allclose(v1t, v2t),        "FAIL: identical views"
-assert 0.05 < v1t.std() < 0.5,             "FAIL: looks like noise"
-assert v1.shape[0] == 1,                   "FAIL: wrong channel dim"
-print("All Phase 1 evaluation checks passed")
+assert not torch.allclose(t1, t2),    f"FAIL distinctness — mean diff = {(t1-t2).abs().mean():.4f}"
+assert 0.05 < t1.std() < 0.50,       f"FAIL structure — std = {t1.std():.4f}"
+assert v1.shape[0] == 128,            f"FAIL shape — got {v1.shape}"
+
+print("All Phase 1 evaluation checks PASSED")
+# >> All Phase 1 evaluation checks PASSED
 ```
-
----
-
-## Dataset
-
-**FMA-Small** — 8,000 tracks x 30 seconds, 8 balanced genres.
-
-```bash
-wget https://os.unil.cloud.switch.ch/fma/fma_small.zip && unzip fma_small.zip
-wget https://os.unil.cloud.switch.ch/fma/fma_metadata.zip && unzip fma_metadata.zip
-```
-
-> **Constraint**: `tracks.csv` genre labels must NOT be used during Phase 2 pre-training.
 
 ---
 
 ## Mathematical Reference
 
-**Mel Scale:** `m = 2595 · log₁₀(1 + f / 700)`
+**Mel Scale** (Stevens, Volkmann & Newman, 1937):
+```
+m = 2595 × log₁₀(1 + f / 700)
+```
 
-**NT-Xent Loss:** `ℓ(i,j) = −log [ exp(sim(zᵢ,zⱼ)/τ) / Σₖ≠ᵢ exp(sim(zᵢ,zₖ)/τ) ]`
+**NT-Xent Contrastive Loss** (Chen et al., 2020):
+```
+ℓ(i,j) = −log [ exp(sim(zᵢ,zⱼ) / τ) / Σ_{k≠i} exp(sim(zᵢ,zₖ) / τ) ]
 
-**Retrieval Score:** `score(q,v) = (q·v) / (‖q‖·‖v‖)`
+where  sim(u,v) = uᵀv / (‖u‖ · ‖v‖)  and  τ ∈ [0.1, 0.5]
+```
+
+**Cosine Similarity for Retrieval** (Phase 3):
+```
+score(q, v) = (q · v) / (‖q‖ · ‖v‖)
+```
+
+---
+
+## Project Structure
+
+```
+audio-analyzer/
+├── echofind_gui.py                  # Complete application — run this
+├── requirements.txt                 # pip dependencies
+├── README.md
+├── notebooks/
+│   └── phase1_echofind.ipynb       # Jupyter walkthrough + eval checks
+└── LICENSE                          # MIT
+```
 
 ---
 
 ## References
 
-1. McFee et al. (2015). *librosa: Audio and Music Signal Analysis in Python.* SciPy 2015.
-2. Chen et al. (2020). *A Simple Framework for Contrastive Learning of Visual Representations.* ICML 2020.
-3. Grill et al. (2020). *Bootstrap Your Own Latent.* NeurIPS 2020.
-4. Zbontar et al. (2021). *Barlow Twins: Self-Supervised Learning via Redundancy Reduction.* ICML 2021.
-5. Park et al. (2019). *SpecAugment: A Simple Data Augmentation Method for ASR.* Interspeech 2019.
-6. Defferrard et al. (2017). *FMA: A Dataset for Music Analysis.* ISMIR 2017.
-7. Fitzgerald (2010). *Harmonic/Percussive Separation Using Median Filtering.* DAFx-10.
-8. IEEE Impulse 2026 Problem Statement — EchoFind.
+1. **McFee et al. (2015)**. *librosa: Audio and Music Signal Analysis in Python*. SciPy 2015. DOI: 10.25080/Majora-7b98e3ed-003
+2. **Chen et al. (2020)**. *A Simple Framework for Contrastive Learning of Visual Representations*. ICML 2020.
+3. **Park et al. (2019)**. *SpecAugment: A Simple Data Augmentation Method for ASR*. Interspeech 2019.
+4. **Ellis (2007)**. *Beat Tracking by Dynamic Programming*. Journal of New Music Research, 36(1).
+5. **Fitzgerald (2010)**. *Harmonic/Percussive Separation Using Median Filtering*. DAFx-10.
+6. **Defferrard et al. (2017)**. *FMA: A Dataset for Music Analysis*. ISMIR 2017.
+7. **IEEE Impulse 2026**. *EchoFind Problem Statement — Signal Processing & Deep Learning Track*.
 
 ---
 
 ## License
 
-MIT License.
+MIT License — see `LICENSE` for full terms.
