@@ -7,12 +7,12 @@
 
 ## What Is This?
 
-Audio Analyzer is a single-file Python desktop application (`echofind_gui.py`) that transforms any audio file into a suite of nine interactive signal-processing visualisations in under two seconds. It runs entirely on your local machine, embedding all computation and rendering inside a native window.
+Audio Analyzer is a single-file Python desktop application (`Audio_Analyzer.py`) that transforms any audio file into a suite of nine interactive signal-processing visualisations. It runs entirely on your local machine, embedding all computation and rendering inside a native window.
 
 The project serves a dual purpose:
 
 1. **Educational tool** — an interactive, code-free environment for exploring MIR (Music Information Retrieval) concepts grounded in McFee et al. (2015).
-2. **Phase 1 Input Pipeline** — the complete preprocessing and augmentation stack for *Audio Analyzer*
+2. **Phase 1 Input Pipeline** — preprocessing and augmentation you can reuse for contrastive or other self-supervised setups.
 
 The core premise: before any deep learning model can learn audio representations, the raw waveform must be converted into a perceptually meaningful, augmentation-ready format. This application implements and visualises every step of that transformation.
 
@@ -27,12 +27,12 @@ Raw Audio File (.mp3 / .wav / .ogg / .flac / .m4a)
  librosa.load()  ──  resample to 22,050 Hz, downmix to mono
          │
          ▼
- STFT  (n_fft=2048, hop_length=512, Hann window)
+ STFT  (librosa defaults: n_fft=2048, hop_length=512, Hann window)
          │
          ├──── Mel Filterbank (128 bands)
          │         │
          │         ▼
-         │     power_to_dB  ──  normalise [0,1]  ──  Tensor [1, 128, T]
+         │     power_to_dB  ──  normalise [0,1]  ──  NumPy [128, T]  (batch as [1,128,T] in your trainer)
          │         │
          │         ▼
          │     AugmentationPipeline
@@ -43,7 +43,7 @@ Raw Audio File (.mp3 / .wav / .ogg / .flac / .m4a)
          │     └── Time Masking    t     ~  U[0, 80]   frames
          │         │
          │         ▼
-         │     (view_i, view_j)  ←  SimCLR positive pair
+         │     (view_i, view_j)  ←  SimCLR-style positive pair
          │
          ├──── Chromagram  (CQT, 12 pitch classes)
          ├──── MFCC        (20 coefficients)
@@ -72,10 +72,10 @@ pip install -r requirements.txt
 ### Run
 
 ```bash
-python echofind_gui.py
+python Audio_Analyzer.py
 ```
 
-Click **Open Audio File** in the header bar, select any supported audio file, and all nine tabs populate automatically.
+Click **Open Audio File** in the header bar, select any supported audio file — the first tab renders immediately; select each remaining tab once to build its plot (see below).
 
 ---
 
@@ -85,7 +85,7 @@ Click **Open Audio File** in the header bar, select any supported audio file, an
 librosa>=0.10.0       # Audio I/O, STFT, Mel filterbanks, HPSS, beat tracking
 matplotlib>=3.7.0     # All figure rendering via FigureCanvasTkAgg
 numpy>=1.24.0         # Array operations throughout
-soundfile>=0.12.0     # Audio file backend (MP3/FLAC/OGG) for librosa
+soundfile>=0.12.0     # Audio file backend for librosa (WAV/FLAC/OGG; MP3 often uses audioread/ffmpeg)
 ```
 
 > **tkinter** is part of the Python standard library. If it is missing on your Linux system, install it with:
@@ -107,7 +107,7 @@ soundfile>=0.12.0     # Audio file backend (MP3/FLAC/OGG) for librosa
 | ⑧ | HPSS | `librosa.effects.hpss` | Harmonic vs. percussive component Mel spectrograms |
 | ⑨ | SSL Augmented Views | `AugmentationPipeline` (custom) | Two stochastic contrastive views (x̃ᵢ, x̃ⱼ) with augmentation labels |
 
-Each tab renders lazily — computation starts only when the tab is first selected — in a background daemon thread, keeping the GUI fully responsive at all times.
+**When tabs compute:** After a file loads, the **first tab (① Mel Spec)** is rendered automatically. Every **other** tab runs its computation in a **background daemon thread** the first time you select it, so the GUI stays responsive.
 
 ---
 
@@ -118,10 +118,10 @@ Seven scalar descriptors are computed immediately after file load and displayed 
 | Stat | Computation |
 |------|------------|
 | Duration | `len(y) / sr` |
-| Tempo | `librosa.beat.beat_track(y, sr)` — Ellis (2007) dynamic programming |
-| Spectral Centroid | `mean(librosa.feature.spectral_centroid(y, sr))` |
-| Bandwidth | `mean(librosa.feature.spectral_bandwidth(y, sr))` |
-| Rolloff | `mean(librosa.feature.spectral_rolloff(y, sr))` |
+| Tempo | `librosa.beat.beat_track(y=y, sr=sr)` — Ellis (2007) dynamic programming |
+| Spectral Centroid | `mean(librosa.feature.spectral_centroid(y=y, sr=sr))` |
+| Bandwidth | `mean(librosa.feature.spectral_bandwidth(y=y, sr=sr))` |
+| Rolloff | `mean(librosa.feature.spectral_rolloff(y=y, sr=sr))` |
 | ZCR | `mean(librosa.feature.zero_crossing_rate(y))` |
 | RMS Energy | `mean(librosa.feature.rms(y=y))` |
 
@@ -133,7 +133,7 @@ The `AugmentationPipeline` class can be imported and used independently:
 
 ```python
 import librosa
-from echofind_gui import AugmentationPipeline
+from Audio_Analyzer import AugmentationPipeline
 
 aug = AugmentationPipeline(sr=22050)
 y, sr = librosa.load("track.mp3", sr=22050, mono=True)
@@ -143,7 +143,7 @@ view_i, ops_i = aug(y)
 view_j, ops_j = aug(y)
 
 # view_i, view_j : np.ndarray of shape [128, T], values in [0, 1]
-# ops_i, ops_j   : list of str, e.g. ['Stretch(x0.92)', 'Pitch(+2.1st)', 'TimeMask(54fr)']
+# ops_i, ops_j   : list of str, e.g. ['Stretch(×0.92)', 'Pitch(+2.1st)', 'TimeMask(54fr)', 'FreqMask(12bands)', 'Noise(σ=0.012)']
 ```
 
 ### Augmentation Details
@@ -156,59 +156,33 @@ view_j, ops_j = aug(y)
 | Frequency Masking | Spectrogram | `f ~ U[0, 30] bands` | Spectral dropout |
 | Time Masking | Spectrogram | `t ~ U[0, 80] frames` | Temporal occlusion |
 
-Each transform has an independent application probability (0.50–0.80). A typical call applies 3–4 of the 5 transforms.
+Each transform has an independent application probability (0.5 for pitch, 0.6 for stretch, 0.7 for noise, 0.8 for each mask). A typical call applies several of the five transforms.
 
 ---
 
-## SSL Dataset Class
+## Using Augmented Views in PyTorch (bring your own dataset)
 
-For use in a PyTorch training loop:
-
-```python
-from echofind_gui import FMASSLDataset
-from torch.utils.data import DataLoader
-import glob
-
-audio_paths = glob.glob("fma_small/**/*.mp3", recursive=True)
-
-dataset = FMASSLDataset(
-    audio_paths=audio_paths,
-    target_sr=22050,
-    duration=5.0           # seconds per clip
-)
-
-loader = DataLoader(dataset, batch_size=256, shuffle=True, num_workers=4)
-
-for view_i, view_j, track_idx in loader:
-    # view_i, view_j : FloatTensor [B, 1, 128, T]
-    # Genre labels are deliberately excluded — self-supervised only
-    embeddings_i = encoder(view_i)
-    embeddings_j = encoder(view_j)
-    loss = nt_xent_loss(embeddings_i, embeddings_j, temperature=0.2)
-    ...
-```
+This repository ships the **GUI** and **`AugmentationPipeline`** only. For training, wrap `aug(y)` in a `torch.utils.data.Dataset` that loads clips, optionally crops to a fixed duration, and returns `torch.from_numpy(view).float().unsqueeze(0)` (shape `[1, 128, T]`) for each view. No `FMASSLDataset` class is included here.
 
 ---
 
 ## Organiser Evaluation Checks (Phase 1)
 
-all three checks pass:
+All three checks pass with NumPy only (no PyTorch required):
 
 ```python
 import numpy as np
-import torch
-from echofind_gui import AugmentationPipeline
+from Audio_Analyzer import AugmentationPipeline
 
 aug   = AugmentationPipeline(sr=22050)
 dummy = (np.random.randn(22050 * 5) * 0.1).astype(np.float32)
 
 v1, _ = aug(dummy)
 v2, _ = aug(dummy)
-t1, t2 = torch.tensor(v1), torch.tensor(v2)
 
-assert not torch.allclose(t1, t2),    f"FAIL distinctness — mean diff = {(t1-t2).abs().mean():.4f}"
-assert 0.05 < t1.std() < 0.50,       f"FAIL structure — std = {t1.std():.4f}"
-assert v1.shape[0] == 128,            f"FAIL shape — got {v1.shape}"
+assert not np.allclose(v1, v2),    f"FAIL distinctness — mean diff = {np.abs(v1-v2).mean():.4f}"
+assert 0.05 < v1.std() < 0.50,     f"FAIL structure — std = {v1.std():.4f}"
+assert v1.shape[0] == 128,         f"FAIL shape — got {v1.shape}"
 
 print("All Phase 1 evaluation checks PASSED")
 # >> All Phase 1 evaluation checks PASSED
@@ -241,10 +215,7 @@ score(q, v) = (q · v) / (‖q‖ · ‖v‖)
 
 ```
 audio-analyzer/
-├── Audio_Analyzer.py                  # Complete application — run this
-├── requirements.txt                 # pip dependencies
+├── Audio_Analyzer.py    # Complete application — run this
+├── requirements.txt     # pip dependencies
 ├── README.md
-
 ```
-
----
